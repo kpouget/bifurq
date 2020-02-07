@@ -7,6 +7,8 @@ from dash.dependencies import Input, Output, State
 import plotly.graph_objects as go
 import numpy as np
 import pandas
+import types
+
 
 # /!\ change NB_STEP_COEF to have a higher-density line on the bifurq
 # plot, or make it smaller to improve the plotting performance
@@ -17,63 +19,75 @@ N_COMPUTE = 80 # iterate N times over r*x*(1-x)
 KEEP = 15 # keep the last N numbers of the r*x*(1-x) tail
 ROUND = 3 # round float to N decimal digits
 
+DEFAULTS = types.SimpleNamespace()
 # initial values of UI controls
-INITIAL_VALUE=0.6
-START_COEF = 1
-END_COEF = 4
-FOCUS_COEF=3.56
+DEFAULTS.INITIAL_VALUE = 0.6
+DEFAULTS.START_COEF = 1
+DEFAULTS.END_COEF = 4
+DEFAULTS.FOCUS_COEF = 3.56
+DEFAULTS.SHOW_FULL = "yes"
+ZOOM = "---"
 
-ZOOMS = {0: (START_COEF, END_COEF, FOCUS_COEF),
-         1: (3, 3.8, FOCUS_COEF),
-         2: (3.45, 3.8, FOCUS_COEF),
-         3: (3.543, 3.58, FOCUS_COEF),
+ZOOMS = {
+    "---": (0, 0, 0),
+    0: (DEFAULTS.START_COEF, DEFAULTS.END_COEF, DEFAULTS.FOCUS_COEF),
+    1: (3, 3.8, DEFAULTS.FOCUS_COEF),
+    2: (3.45, 3.8, DEFAULTS.FOCUS_COEF),
+    3: (3.543, 3.58, DEFAULTS.FOCUS_COEF),
 }
 
 external_stylesheets = [# 'https://codepen.io/chriddyp/pen/bWLwgP.css' # served via assets/bWLwgP.css and automatically included
 ]
 
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets,
+                suppress_callback_exceptions=True,
+)
 
+def build_layout(vals=None):
+    if not vals: vals = DEFAULTS
 
-app.layout = html.Div([
-    html.Div([
-        html.Div(className='two columns', children=[
-            "Initial value: ", html.Span(id='span-initial-value'), html.Br(),
-            dcc.Slider(id='input-initial-value', value=INITIAL_VALUE, step=0.1, min=0, max=1), html.Br(),
-            "Start coef ", html.Br(),
-            dcc.Input(id='input-start-coef', value=START_COEF, type='number'), html.Br(),
-            "End coef ", html.Br(),
-            dcc.Input(id='input-end-coef', value=END_COEF, type='number'), html.Br(),
-            "Zoom ",
-            dcc.Dropdown(id='input-zoom', value=0, options=[{'label':i, 'value': i} for i in ZOOMS], clearable=False, style={"width": "164px"}),
+    return html.Div([
+        html.Div([
+            html.Div(className='two columns', children=[
+                "Initial value: ", html.Span(id='span-initial-value'), html.Br(),
+                dcc.Slider(id='input-initial-value', value=vals.INITIAL_VALUE, step=0.1, min=0, max=1), html.Br(),
+                "Start coef ", html.Br(),
+                dcc.Input(id='input-start-coef', value=vals.START_COEF, type='number'), html.Br(),
+                "End coef ", html.Br(),
+                dcc.Input(id='input-end-coef', value=vals.END_COEF, type='number'), html.Br(),
+                "Zoom: ",
+                dcc.Dropdown(id='input-zoom', value=ZOOM, options=[{'label':i, 'value': i} for i in ZOOMS], clearable=False, style={"width": "164px"}),
+            ]),
+            html.Div(className='ten columns', children=[
+                dcc.Graph(id='graph-overview')
+            ]),
         ]),
-        html.Div(className='ten columns', children=[
-            dcc.Graph(id='graph-overview')
-        ]),
-    ]),
+        html.Hr(),
+        html.Div([
+            html.Div(className='two columns', children=[
+                html.Hr(),
+                "Focus on coefficient ", html.Br(),
+                dcc.Input(id='input-focus-coef', value=vals.FOCUS_COEF, type='number', step=0.001),
 
-    html.Hr(),
-    html.Div([
-        html.Div(className='two columns', children=[
-            html.Hr(),
-            "Focus on coefficient ", html.Br(),
-            dcc.Input(id='input-focus-coef', value=FOCUS_COEF, type='number', step=0.001),
+                dcc.RadioItems(id='input-show-full', value=vals.SHOW_FULL,
+                    options=[{'label': 'Show the full population evolution', 'value': 'yes'},
+                             {'label': 'Show only the tail', 'value': 'no'}]),
+                html.Hr(),
+                html.Div(id='focus-solutions', children=["..."]),
+                html.Hr(),
+                html.P(html.A('Permalink', href='', id='permalink'))
+            ]),
+            html.Div(className='five columns', children=[
+                dcc.Graph(id='graph-focus'),
+            ]),
+            html.Div(className='five columns', children=[
+                dcc.Graph(id='graph-distrib'),
+            ]),
+        ]),
+    ])
 
-            dcc.RadioItems(id='input-show-full', value='yes',
-                options=[{'label': 'Show the full population evolution', 'value': 'yes'},
-                         {'label': 'Show only the tail', 'value': 'no'}]),
-            html.Hr(),
-            html.Div(id='focus-solutions', children=["..."])
-        ]),
-        html.Div(className='five columns', children=[
-            dcc.Graph(id='graph-focus'),
-        ]),
-        html.Div(className='five columns', children=[
-            dcc.Graph(id='graph-distrib'),
-        ]),
-    ]),
-])
-
+app.layout = html.Div([html.Div(id='page-content'),
+                       dcc.Location('url', refresh=False)])
 
 def compute_evolution(start, r, full=False):
     x = start
@@ -83,6 +97,38 @@ def compute_evolution(start, r, full=False):
         vals.append(x)
 
     return vals if full else vals[-KEEP:]
+
+INPUT_NAMES = [i.lower().replace("_", "-") for i in DEFAULTS.__dict__]
+@app.callback(
+    Output('permalink', 'href'),
+    [Input(f"input-{input_name}", 'value') for input_name in INPUT_NAMES])
+def get_permalink(*args):
+    return "?"+"&".join(f"{k}={v}" for k, v in zip(INPUT_NAMES, map(str, args)))
+
+@app.callback(Output('page-content', 'children'),
+              [Input('url', 'search')])
+def display_page(search):
+    import urllib.parse
+    search_dict = urllib.parse.parse_qs(search[1:]) if search else {}
+
+    def get_val(k):
+        try: v = search_dict[k.lower().replace("_", "-")][0]
+        except KeyError: return None
+
+        try: return int(v)
+        except ValueError: pass
+
+        try: return float(v)
+        except ValueError: pass
+
+        return v
+
+    input_dict = {k:get_val(k) for k in DEFAULTS.__dict__ if get_val(k)}
+    new_initial_values = types.SimpleNamespace()
+    new_initial_values.__dict__.update(DEFAULTS.__dict__) # make sure no value is missing
+    new_initial_values.__dict__.update(input_dict)
+
+    return build_layout(new_initial_values)
 
 @app.callback(
     [Output('input-start-coef', 'value'),
@@ -99,6 +145,9 @@ def update_coef(zoom, clickData):
         return dash.no_update, dash.no_update, round(clickData['points'][0]['x'], 2)
 
     # triggered by click on zoom
+
+    if zoom == "---":
+        return dash.no_update, dash.no_update, dash.no_update
 
     try:
         return ZOOMS[zoom]
