@@ -3,7 +3,7 @@
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 import plotly.graph_objects as go
 import numpy as np
 import pandas
@@ -63,6 +63,7 @@ app.layout = html.Div([
                 options=[{'label': 'Show the full population evolution', 'value': 'yes'},
                          {'label': 'Show only the tail', 'value': 'no'}]),
             html.Hr(),
+            html.Div(id='focus-solutions', children=["..."])
         ]),
         html.Div(className='five columns', children=[
             dcc.Graph(id='graph-focus'),
@@ -200,6 +201,17 @@ def draw_overview(init_value, focus_coef, start_coef, end_coef):
     )
     return fig_overview, fig_count
 
+@app.callback(
+    Output('focus-solutions', 'children'),
+    [Input('graph-overview', 'figure')],
+    [State('input-focus-coef', 'value')])
+def update_solutions(graph, focus_coef):
+    if not graph:
+        return "Solutions not computed yet."
+
+    solutions = graph['data'][1]['y']
+    sol_str = ", ".join(sorted({f"{s:.3f}" for s in solutions}))
+    return html.Span([f"Solutions for coef={focus_coef}:", html.Br(), sol_str])
 
 if __name__ == '__main__':
     app.run_server(debug=True)
