@@ -68,7 +68,7 @@ app.layout = html.Div([
             dcc.Graph(id='graph-focus'),
         ]),
         html.Div(className='five columns', children=[
-            "TODO: plot 'Number of solution' here",
+            dcc.Graph(id='graph-distrib'),
         ]),
     ]),
 ])
@@ -133,7 +133,7 @@ def update_initial_value(value):
     return str(value)
 
 @app.callback(
-    Output('graph-overview', 'figure'),
+    [Output('graph-overview', 'figure'), Output('graph-distrib', 'figure')],
     [Input('input-initial-value', 'value'), Input('input-focus-coef', 'value'),
      Input('input-start-coef', 'value'), Input('input-end-coef', 'value'),])
 def draw_overview(init_value, focus_coef, start_coef, end_coef):
@@ -181,12 +181,24 @@ def draw_overview(init_value, focus_coef, start_coef, end_coef):
 
     focus_coef_count = has_coef[-1] if has_coef else 0
 
+    fig_count = go.Figure(data=[go.Scatter(x=count_x, y=count_y)])
 
-    # TODO: 'Number of solution' plot: count_x vs count_y
-    # try to add annotation with
-    # layout.annotations/go.layout.Annotation(x=focus_coef, y=focus_coef_count, text=...)
+    fig_count.update_layout(title={
+        'text': "Number of solution",
+        'y':0.9, 'x':0.5, 'xanchor': 'center', 'yanchor': 'top'})
 
-    return fig_overview
+    fig_count.update_layout(
+        annotations=[
+            go.layout.Annotation(
+                x=focus_coef,
+                y=focus_coef_count,
+                xref="x", yref="y", text=f"coef {focus_coef}: {focus_coef_count} solutions",
+                showarrow=True, arrowhead=7,
+                ax=-40, ay=-40,
+            )
+        ]
+    )
+    return fig_overview, fig_count
 
 
 if __name__ == '__main__':
